@@ -205,6 +205,7 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap');
         * { box-sizing: border-box; }
+        html, body { margin: 0; background: ${C.bg}; }
         .font-display { font-family: 'Space Grotesk', system-ui, sans-serif; }
         .font-mono { font-family: 'Space Mono', ui-monospace, monospace; }
         body, button, select, input { font-family: 'Inter', system-ui, sans-serif; }
@@ -217,12 +218,13 @@ export default function App() {
         .heat-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 11px; transition: transform .12s ease; cursor: default; }
         .heat-cell:hover { transform: scale(1.12); z-index: 2; }
         .grid-2 { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; }
+        .matchup-grid { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: end; }
         .seg { transition: width .5s cubic-bezier(.4,0,.2,1); }
         .card-fade { animation: fade .35s ease; }
         @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         .tab-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .15s ease; }
         select:focus, input:focus, button:focus-visible { outline: 2px solid ${C.home}; outline-offset: 1px; }
-        @media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } .score-big { font-size: 40px; } .team-name { font-size: 20px; } }
+        @media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } .matchup-grid { grid-template-columns: 1fr 1fr; } .score-big { font-size: 40px; } .team-name { font-size: 20px; } }
         @media (prefers-reduced-motion: reduce) { .seg, .heat-cell, .card-fade { transition: none; animation: none; } }
       `}</style>
 
@@ -242,10 +244,14 @@ export default function App() {
         </div>
 
         <div className="rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 16, marginBottom: 22 }}>
-          <div style={{ marginBottom: 14 }}>
-            <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>API URL</label>
-            <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://your-app.up.railway.app" style={{ ...inputStyle, marginTop: 6 }} />
-          </div>
+          {/* Dev-only API URL override. Hidden in production: VITE_API_URL is the
+              source of truth there, and CSP connect-src is pinned to that origin. */}
+          {import.meta.env.DEV && (
+            <div style={{ marginBottom: 14 }}>
+              <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>API URL</label>
+              <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://your-app.up.railway.app" style={{ ...inputStyle, marginTop: 6 }} />
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             <button className="tab-btn" onClick={() => setTab("fixtures")} style={{ background: tab === "fixtures" ? C.home : C.panel2, color: tab === "fixtures" ? "#001233" : C.dim }}>Upcoming fixtures</button>
             <button className="tab-btn" onClick={() => setTab("live")} style={{ background: tab === "live" ? C.home : C.panel2, color: tab === "live" ? "#001233" : C.dim }}>Any matchup</button>
@@ -259,7 +265,7 @@ export default function App() {
               </select>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "end" }}>
+            <div className="matchup-grid">
               <div>
                 <label className="font-mono" style={{ color: C.home, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Home</label>
                 <select value={home} onChange={(e) => setHome(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>{teams.map((t) => <option key={t}>{t}</option>)}</select>
