@@ -2,6 +2,10 @@ import React, { useState, useMemo, useEffect } from "react";
 import predictionsData from "./data/predictions.json";
 import teamsData from "./data/teams.json";
 import type { Prediction } from "./types";
+import { C, heat, pct, pct0, outcomeColor } from "./theme";
+import { fetchPredict, type ExtraKey } from "./api";
+import ExtrasView from "./Extras";
+import Ratings from "./Ratings";
 
 const DEMO_PREDICTIONS = predictionsData as Prediction[];
 const ALL_TEAMS = teamsData as string[];
@@ -10,40 +14,13 @@ const ALL_TEAMS = teamsData as string[];
 // bundle) — fine for a public API URL, never for secrets. See .env.example.
 const DEPLOYED_API = import.meta.env.VITE_API_URL || "";
 
-// ---------- palette ----------
-const C = {
-  bg: "#0A111E", panel: "#111C2E", panel2: "#0E1726", line: "#22304A",
-  ink: "#EAF0FA", dim: "#8595B4", faint: "#5C6B89",
-  home: "#4F8DFF", away: "#FF5C72", draw: "#7C8AAB", win: "#34D399", warn: "#F2B544",
-};
-
-const STOPS: [number, [number, number, number]][] = [
-  [0.0, [14, 23, 38]], [0.32, [34, 70, 138]], [0.58, [122, 46, 160]],
-  [0.8, [214, 52, 110]], [1.0, [255, 142, 61]],
+// Extras the "Any matchup" tab can request. Kept opt-in so default payloads
+// stay small (the API only includes these sections when asked).
+const EXTRA_OPTIONS: { key: ExtraKey; label: string }[] = [
+  { key: "markets", label: "Markets" },
+  { key: "margin", label: "Margin" },
+  { key: "uncertainty", label: "Uncertainty" },
 ];
-function heat(t: number): string {
-  t = Math.max(0, Math.min(1, t));
-  for (let i = 1; i < STOPS.length; i++) {
-    if (t <= STOPS[i][0]) {
-      const [t0, c0] = STOPS[i - 1], [t1, c1] = STOPS[i];
-      const f = (t - t0) / (t1 - t0 || 1);
-      const c = c0.map((v, k) => Math.round(v + (c1[k] - v) * f));
-      return `rgb(${c[0]},${c[1]},${c[2]})`;
-    }
-  }
-  return "rgb(255,142,61)";
-}
-const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-const pct0 = (x: number) => `${Math.round(x * 100)}%`;
-const outcomeColor = (h: number, a: number) => (h > a ? C.home : a > h ? C.away : C.draw);
-const apiBase = (u: string) => u.trim().replace(/\/$/, "");
-
-async function fetchPredict(base: string, home: string, away: string, neutral: boolean): Promise<Prediction> {
-  const url = `${apiBase(base)}/predict?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}&neutral=${neutral}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return (await r.json()) as Prediction;
-}
 
 function MatchCard({ p }: { p: Prediction }) {
   const maxCell = useMemo(() => {
@@ -150,6 +127,7 @@ function MatchCard({ p }: { p: Prediction }) {
 
 export default function App() {
   const fixtures = useMemo(() => [...DEMO_PREDICTIONS].sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1)), []);
+  const [page, setPage] = useState<"predict" | "ratings">("predict");
   const [tab, setTab] = useState<"fixtures" | "live">("fixtures");
   const [apiUrl, setApiUrl] = useState(DEPLOYED_API);
   const [fixIdx, setFixIdx] = useState(0);
@@ -162,6 +140,13 @@ export default function App() {
   const [home, setHome] = useState("Mexico");
   const [away, setAway] = useState("South Korea");
   const [neutral, setNeutral] = useState(false);
+  // venue (host country) overrides neutral when set; "" = none. Sourced from the
+  // same team list — never hard-coded.
+  const [venue, setVenue] = useState("");
+  const [extras, setExtras] = useState<ExtraKey[]>([]);
+
+  const toggleExtra = (k: ExtraKey) =>
+    setExtras((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
 
   // fixtures tab: fetch the selected scheduled match live, fall back to cached
   useEffect(() => {
@@ -186,7 +171,7 @@ export default function App() {
   async function predictLive() {
     setBusy(true); setStatus(null);
     try {
-      const r = await fetchPredict(apiUrl, home, away, neutral);
+      const r = await fetchPredict(apiUrl, home, away, neutral, { venue: venue || null, extras });
       setResult(r); setSource("live");
     } catch (e) {
       setStatus({ ok: false, msg: `Prediction failed (${e instanceof Error ? e.message : String(e)}). Check the URL, that the model deployed, and that CORS is open.` });
@@ -238,11 +223,23 @@ export default function App() {
               bayesian poisson · dixon-coles · posterior-predictive scorelines
             </div>
           </div>
-          <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: badge.c, border: `1px solid ${C.line}`, borderRadius: 99, padding: "5px 11px" }}>
-            {badge.t}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="tab-btn" onClick={() => setPage("predict")} style={{ background: page === "predict" ? C.home : C.panel2, color: page === "predict" ? "#001233" : C.dim }}>Predictions</button>
+              <button className="tab-btn" onClick={() => setPage("ratings")} style={{ background: page === "ratings" ? C.home : C.panel2, color: page === "ratings" ? "#001233" : C.dim }}>Team ratings</button>
+            </div>
+            {page === "predict" && (
+              <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: badge.c, border: `1px solid ${C.line}`, borderRadius: 99, padding: "5px 11px" }}>
+                {badge.t}
+              </div>
+            )}
           </div>
         </div>
 
+        {page === "ratings" ? (
+          <Ratings apiUrl={apiUrl} />
+        ) : (
+        <>
         <div className="rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 16, marginBottom: 22 }}>
           {/* Dev-only API URL override. Hidden in production: VITE_API_URL is the
               source of truth there, and CSP connect-src is pinned to that origin. */}
@@ -265,30 +262,59 @@ export default function App() {
               </select>
             </div>
           ) : (
-            <div className="matchup-grid">
-              <div>
-                <label className="font-mono" style={{ color: C.home, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Home</label>
-                <select value={home} onChange={(e) => setHome(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>{teams.map((t) => <option key={t}>{t}</option>)}</select>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="matchup-grid">
+                <div>
+                  <label className="font-mono" style={{ color: C.home, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Home</label>
+                  <select value={home} onChange={(e) => setHome(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>{teams.map((t) => <option key={t}>{t}</option>)}</select>
+                </div>
+                <div>
+                  <label className="font-mono" style={{ color: C.away, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Away</label>
+                  <select value={away} onChange={(e) => setAway(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>{teams.map((t) => <option key={t}>{t}</option>)}</select>
+                </div>
+                <label title={venue ? "Overridden by the selected venue" : undefined} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.dim, height: 38, opacity: venue ? 0.4 : 1 }}>
+                  <input type="checkbox" checked={neutral} disabled={!!venue} onChange={(e) => setNeutral(e.target.checked)} /> Neutral
+                </label>
+                <button className="tab-btn" disabled={busy} onClick={predictLive} style={{ background: C.win, color: "#00231a", height: 38 }}>{busy ? "…" : "Predict"}</button>
               </div>
-              <div>
-                <label className="font-mono" style={{ color: C.away, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Away</label>
-                <select value={away} onChange={(e) => setAway(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>{teams.map((t) => <option key={t}>{t}</option>)}</select>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Venue (optional)</label>
+                  <select value={venue} onChange={(e) => setVenue(e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>
+                    <option value="">No venue — use neutral flag</option>
+                    {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: "1 1 220px" }}>
+                  <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Extras</label>
+                  <div style={{ display: "flex", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
+                    {EXTRA_OPTIONS.map((o) => (
+                      <label key={o.key} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.dim }}>
+                        <input type="checkbox" checked={extras.includes(o.key)} onChange={() => toggleExtra(o.key)} /> {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.dim, height: 38 }}>
-                <input type="checkbox" checked={neutral} onChange={(e) => setNeutral(e.target.checked)} /> Neutral
-              </label>
-              <button className="tab-btn" disabled={busy} onClick={predictLive} style={{ background: C.win, color: "#00231a", height: 38 }}>{busy ? "…" : "Predict"}</button>
+              {venue && (
+                <div className="font-mono" style={{ fontSize: 10, color: C.faint }}>
+                  venue overrides the neutral flag · crowd support derived from {venue}
+                </div>
+              )}
             </div>
           )}
           {status && <div style={{ fontSize: 12, color: status.ok ? C.win : C.warn, marginTop: 12 }}>{status.msg}</div>}
         </div>
 
         {result && <MatchCard p={result} />}
+        {result && <ExtrasView p={result} />}
 
         <div className="font-mono" style={{ color: C.faint, fontSize: 10, textAlign: "center", marginTop: 26, lineHeight: 1.7 }}>
           probabilities are posterior-predictive over 1,500 draws · home advantage off at neutral venues<br />
           model trained on international results since 2021 with time-decay weighting
         </div>
+        </>
+        )}
       </div>
     </div>
   );
