@@ -1,6 +1,10 @@
 import React, { useState, useMemo, useEffect } from "react";
-import DEMO_PREDICTIONS from "./data/predictions.json";
-import ALL_TEAMS from "./data/teams.json";
+import predictionsData from "./data/predictions.json";
+import teamsData from "./data/teams.json";
+import type { Prediction } from "./types";
+
+const DEMO_PREDICTIONS = predictionsData as Prediction[];
+const ALL_TEAMS = teamsData as string[];
 
 // API base URL comes from a build-time env var. It is PUBLIC (baked into the
 // bundle) — fine for a public API URL, never for secrets. See .env.example.
@@ -13,11 +17,11 @@ const C = {
   home: "#4F8DFF", away: "#FF5C72", draw: "#7C8AAB", win: "#34D399", warn: "#F2B544",
 };
 
-const STOPS = [
+const STOPS: [number, [number, number, number]][] = [
   [0.0, [14, 23, 38]], [0.32, [34, 70, 138]], [0.58, [122, 46, 160]],
   [0.8, [214, 52, 110]], [1.0, [255, 142, 61]],
 ];
-function heat(t) {
+function heat(t: number): string {
   t = Math.max(0, Math.min(1, t));
   for (let i = 1; i < STOPS.length; i++) {
     if (t <= STOPS[i][0]) {
@@ -29,19 +33,19 @@ function heat(t) {
   }
   return "rgb(255,142,61)";
 }
-const pct = (x) => `${(x * 100).toFixed(1)}%`;
-const pct0 = (x) => `${Math.round(x * 100)}%`;
-const outcomeColor = (h, a) => (h > a ? C.home : a > h ? C.away : C.draw);
-const apiBase = (u) => u.trim().replace(/\/$/, "");
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+const pct0 = (x: number) => `${Math.round(x * 100)}%`;
+const outcomeColor = (h: number, a: number) => (h > a ? C.home : a > h ? C.away : C.draw);
+const apiBase = (u: string) => u.trim().replace(/\/$/, "");
 
-async function fetchPredict(base, home, away, neutral) {
+async function fetchPredict(base: string, home: string, away: string, neutral: boolean): Promise<Prediction> {
   const url = `${apiBase(base)}/predict?home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}&neutral=${neutral}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  return (await r.json()) as Prediction;
 }
 
-function MatchCard({ p }) {
+function MatchCard({ p }: { p: Prediction }) {
   const maxCell = useMemo(() => {
     let m = 0;
     p.score_matrix.forEach((row) => row.forEach((v) => (m = Math.max(m, v))));
@@ -145,14 +149,14 @@ function MatchCard({ p }) {
 }
 
 export default function App() {
-  const fixtures = useMemo(() => [...DEMO_PREDICTIONS].sort((a, b) => (a.date < b.date ? -1 : 1)), []);
-  const [tab, setTab] = useState("fixtures");
+  const fixtures = useMemo(() => [...DEMO_PREDICTIONS].sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1)), []);
+  const [tab, setTab] = useState<"fixtures" | "live">("fixtures");
   const [apiUrl, setApiUrl] = useState(DEPLOYED_API);
   const [fixIdx, setFixIdx] = useState(0);
-  const [result, setResult] = useState(fixtures[0]);
-  const [source, setSource] = useState("cached"); // 'live' | 'cached'
+  const [result, setResult] = useState<Prediction>(fixtures[0]);
+  const [source, setSource] = useState<"live" | "cached">("cached");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [teams] = useState(ALL_TEAMS);
   const [home, setHome] = useState("Mexico");
@@ -173,7 +177,7 @@ export default function App() {
       } catch (e) {
         if (cancelled) return;
         setResult(f); setSource("cached");
-        setStatus({ ok: false, msg: `API unreachable (${e.message}) — showing the embedded snapshot.` });
+        setStatus({ ok: false, msg: `API unreachable (${e instanceof Error ? e.message : String(e)}) — showing the embedded snapshot.` });
       } finally { if (!cancelled) setBusy(false); }
     })();
     return () => { cancelled = true; };
@@ -185,7 +189,7 @@ export default function App() {
       const r = await fetchPredict(apiUrl, home, away, neutral);
       setResult(r); setSource("live");
     } catch (e) {
-      setStatus({ ok: false, msg: `Prediction failed (${e.message}). Check the URL, that the model deployed, and that CORS is open.` });
+      setStatus({ ok: false, msg: `Prediction failed (${e instanceof Error ? e.message : String(e)}). Check the URL, that the model deployed, and that CORS is open.` });
     } finally { setBusy(false); }
   }
 
