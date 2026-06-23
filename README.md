@@ -1,8 +1,8 @@
 # WC26 Match Model — Web
 
-Vite + React front end for the WC2026 prediction API. The API base URL is read
-from a build-time environment variable; the page calls the API live and falls
-back to an embedded snapshot if the API is unreachable.
+Vite + React + TypeScript front end for the WC2026 prediction API. The API base
+URL is read from a build-time environment variable; the page calls the API live
+and falls back to an embedded snapshot if the API is unreachable.
 
 ## Local dev
 
@@ -10,7 +10,13 @@ back to an embedded snapshot if the API is unreachable.
 npm install
 cp .env.example .env        # set VITE_API_URL
 npm run dev                 # http://localhost:5173
+npm run typecheck           # tsc --noEmit — type-check only, not run by the build
+npm run build               # -> dist/ (VITE_API_URL is baked in at build time)
 ```
+
+In dev, a small **API URL** field lets you point at a local/staging API without
+editing `.env`. It's hidden in production builds, where `VITE_API_URL` is the
+single source of truth (and the CSP `connect-src` is pinned to that origin).
 
 ## Environment variable
 
