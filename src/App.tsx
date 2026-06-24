@@ -10,6 +10,13 @@ import Ratings from "./Ratings";
 const DEMO_PREDICTIONS = predictionsData as Prediction[];
 const ALL_TEAMS = teamsData as string[];
 
+// Local calendar date (YYYY-MM-DD) used to hide fixtures whose date has already
+// passed — the picker should only offer matches that haven't been played.
+const TODAY = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+})();
+
 // API base URL comes from a build-time env var. It is PUBLIC (baked into the
 // bundle) — fine for a public API URL, never for secrets. See .env.example.
 const DEPLOYED_API = import.meta.env.VITE_API_URL || "";
@@ -126,12 +133,16 @@ function MatchCard({ p }: { p: Prediction }) {
 }
 
 export default function App() {
-  const fixtures = useMemo(() => [...DEMO_PREDICTIONS].sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1)), []);
+  // Only upcoming fixtures (date on/after today), soonest first.
+  const fixtures = useMemo(
+    () => DEMO_PREDICTIONS.filter((f) => (f.date ?? "") >= TODAY).sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1)),
+    [],
+  );
   const [page, setPage] = useState<"predict" | "ratings">("predict");
   const [tab, setTab] = useState<"fixtures" | "live">("fixtures");
   const [apiUrl, setApiUrl] = useState(DEPLOYED_API);
   const [fixIdx, setFixIdx] = useState(0);
-  const [result, setResult] = useState<Prediction>(fixtures[0]);
+  const [result, setResult] = useState<Prediction | undefined>(fixtures[0]);
   const [source, setSource] = useState<"live" | "cached">("cached");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -152,6 +163,7 @@ export default function App() {
   useEffect(() => {
     if (tab !== "fixtures") return;
     const f = fixtures[fixIdx];
+    if (!f) return; // no upcoming fixtures, or index out of range
     let cancelled = false;
     (async () => {
       setBusy(true); setStatus(null);
@@ -257,9 +269,15 @@ export default function App() {
           {tab === "fixtures" ? (
             <div>
               <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Pick a match</label>
-              <select value={fixIdx} onChange={(e) => setFixIdx(+e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>
-                {fixtures.map((f, i) => (<option key={i} value={i}>{f.date} · {f.home} v {f.away}</option>))}
-              </select>
+              {fixtures.length > 0 ? (
+                <select value={fixIdx} onChange={(e) => setFixIdx(+e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>
+                  {fixtures.map((f, i) => (<option key={i} value={i}>{f.date} · {f.home} v {f.away}</option>))}
+                </select>
+              ) : (
+                <div className="font-mono" style={{ color: C.dim, fontSize: 12, marginTop: 8 }}>
+                  No upcoming fixtures left — pick any two teams under “Any matchup”.
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
