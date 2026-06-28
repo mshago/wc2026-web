@@ -17,6 +17,10 @@ const DEMO_PREDICTIONS = predictionsData as Prediction[];
 const cardStyle: React.CSSProperties = {
   background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20,
 };
+const selectStyle: React.CSSProperties = {
+  background: C.panel2, border: `1px solid ${C.line}`, color: C.ink, borderRadius: 8,
+  padding: "10px 11px", fontSize: 13, width: "100%",
+};
 
 const STAGE_ORDER: Stage[] = [
   "GROUP_STAGE", "LAST_32", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "THIRD_PLACE", "FINAL",
@@ -102,6 +106,7 @@ function MatchDetail(
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <div className="font-mono" style={{ color: C.faint, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>
           {STAGE_LABEL[match.stage]}{match.group ? ` · ${match.group.replace("_", " ")}` : ""}
+          {` · ${fmtDate(match.utc_date)} ${fmtTime(match.utc_date)}`}
           {match.played && match.result ? <span style={{ color: C.win }}> · Final {match.result.home}–{match.result.away}</span> : null}
         </div>
         <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: busy ? C.warn : source === "live" ? C.win : C.warn, border: `1px solid ${C.line}`, borderRadius: 99, padding: "4px 10px" }}>
@@ -117,34 +122,11 @@ function MatchDetail(
   );
 }
 
-// ---- list row ----
-
-function Row(
-  { m, canonical, selected, onSelect }: { m: ScheduleMatch; canonical: ReadonlySet<string>; selected: boolean; onSelect: () => void },
-) {
+/** One-line label for a match in the picker. */
+function optionLabel(m: ScheduleMatch, canonical: ReadonlySet<string>) {
   const h = display(m.home, canonical), a = display(m.away, canonical);
-  const score = m.played && m.result ? `${m.result.home}–${m.result.away}` : null;
-  return (
-    <button
-      onClick={onSelect}
-      style={{
-        display: "grid", gridTemplateColumns: "48px 1fr auto 14px", alignItems: "center", gap: 10, width: "100%",
-        background: selected ? C.panel : "transparent", border: `1px solid ${selected ? C.home : C.line}`,
-        borderRadius: 10, padding: "9px 12px", cursor: "pointer", textAlign: "left", color: C.ink,
-      }}
-    >
-      <span className="font-mono" style={{ color: C.faint, fontSize: 10 }}>{fmtDate(m.utc_date)}</span>
-      <span style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        <span style={{ color: m.home ? C.ink : C.faint }}>{h}</span>
-        <span style={{ color: C.faint }}> v </span>
-        <span style={{ color: m.away ? C.ink : C.faint }}>{a}</span>
-      </span>
-      <span className="font-mono" style={{ fontSize: 11, color: score ? C.win : C.dim }}>
-        {score ?? fmtTime(m.utc_date)}
-      </span>
-      <span className="font-mono" style={{ fontSize: 11, color: selected ? C.home : C.faint }}>▸</span>
-    </button>
-  );
+  const score = m.played && m.result ? `  (FT ${m.result.home}–${m.result.away})` : "";
+  return `${fmtDate(m.utc_date)} · ${h} v ${a}${score}`;
 }
 
 // ---- the tab ----
@@ -220,20 +202,20 @@ export default function Fixtures({ apiUrl }: { apiUrl: string }) {
             {fixtures.length} matches · {source === "live" ? "live schedule" : "cached"}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, maxHeight: 460, overflowY: "auto" }}>
+        <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Pick a match</label>
+        <select
+          value={selectedId ?? ""}
+          onChange={(e) => setSelectedId(Number(e.target.value))}
+          style={{ ...selectStyle, marginTop: 6 }}
+        >
           {groups.map((g) => (
-            <div key={g.stage}>
-              <div className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>
-                {STAGE_LABEL[g.stage]} · {g.matches.length}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {g.matches.map((m) => (
-                  <Row key={m.id} m={m} canonical={canonical} selected={m.id === selectedId} onSelect={() => setSelectedId(m.id)} />
-                ))}
-              </div>
-            </div>
+            <optgroup key={g.stage} label={`${STAGE_LABEL[g.stage]} (${g.matches.length})`}>
+              {g.matches.map((m) => (
+                <option key={m.id} value={m.id}>{optionLabel(m, canonical)}</option>
+              ))}
+            </optgroup>
           ))}
-        </div>
+        </select>
       </div>
 
       {selected && <MatchDetail apiUrl={apiUrl} match={selected} canonical={canonical} version={version} />}
