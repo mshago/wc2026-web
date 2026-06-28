@@ -92,10 +92,52 @@ export interface Prediction {
 /** Alias matching the brief's vocabulary for the GET /predict body. */
 export type PredictResponse = Prediction;
 
-/** GET / */
+// ---- model comparison (GET /compare, GET /compare/scoreboard) ----
+
+/**
+ * GET /compare?home=&away= — both models' 1X2 probabilities for a fixture,
+ * always at a neutral venue (no neutral/venue params). Each block is an
+ * `Outcome` (three probabilities summing to ~1). `bayesian` is production,
+ * `xgboost` the challenger. 404 if a team is unknown OR the pair isn't a
+ * precomputed World Cup matchup.
+ */
+export interface CompareResponse {
+  home: string;
+  away: string;
+  bayesian: Outcome;
+  xgboost: Outcome;
+}
+
+/** Backtest metrics for one model. hit_rate higher = better; the rest lower = better. */
+export interface ScoreboardMetrics {
+  /** Share of matches where the model's top pick was the actual result. */
+  hit_rate: number;
+  log_loss: number;
+  brier: number;
+}
+
+/** GET /compare/scoreboard — held-out backtest accuracy of both models. */
+export interface ScoreboardResponse {
+  /** Human-readable description of the held-out split. */
+  holdout: string;
+  n_matches: number;
+  models: {
+    bayesian: ScoreboardMetrics;
+    xgboost: ScoreboardMetrics;
+  };
+}
+
+/** GET / — health plus the model cache key. */
 export interface Health {
   status: string;
   model: string;
+  /**
+   * Cache key for predictions: changes when the model refreshes (daily). May be
+   * null right after a deploy until the first refresh — treat null as "no
+   * version yet" and don't cache against it. Likewise model_trained_at.
+   */
+  model_version: string | null;
+  model_trained_at: string | null;
   teams_available: number;
   usage: string;
 }
@@ -117,4 +159,48 @@ export interface TeamRating {
 export interface RatingsResponse {
   count: number;
   teams: TeamRating[];
+}
+
+// ---- schedule API (GET /fixtures) ----
+// Source of truth for which matches exist and the bracket as it resolves. The
+// prediction API does NOT know the schedule; we map names then predict.
+
+/** Tournament stage, ordered group → final. */
+export type Stage =
+  | "GROUP_STAGE"
+  | "LAST_32"
+  | "LAST_16"
+  | "QUARTER_FINALS"
+  | "SEMI_FINALS"
+  | "THIRD_PLACE"
+  | "FINAL";
+
+/**
+ * One scheduled match. `home`/`away` are the SCHEDULE API's team names (not
+ * necessarily the prediction API's canonical names — map via teamMap) and are
+ * null for undetermined knockout slots. `*_known` flags whether the slot holds
+ * a resolvable team. `venue_country`, when set, is the host nation to pass as
+ * `venue=` to /predict; null + `neutral:true` means a genuinely neutral game.
+ */
+export interface ScheduleMatch {
+  id: number;
+  utc_date: string;
+  status: "FINISHED" | "TIMED" | string;
+  stage: Stage;
+  group: string | null;
+  home: string | null;
+  away: string | null;
+  home_known: boolean;
+  away_known: boolean;
+  venue: string | null;
+  venue_country: string | null;
+  neutral: boolean;
+  played: boolean;
+  result: { home: number; away: number } | null;
+}
+
+/** GET /fixtures */
+export interface ScheduleResponse {
+  count: number;
+  fixtures: ScheduleMatch[];
 }

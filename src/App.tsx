@@ -1,21 +1,15 @@
-import React, { useState, useMemo, useEffect } from "react";
-import predictionsData from "./data/predictions.json";
+import { useState } from "react";
 import teamsData from "./data/teams.json";
 import type { Prediction } from "./types";
-import { C, heat, pct, pct0, outcomeColor } from "./theme";
+import { C } from "./theme";
 import { fetchPredict, type ExtraKey } from "./api";
 import ExtrasView from "./Extras";
 import Ratings from "./Ratings";
+import ModelCompare, { Scoreboard } from "./Compare";
+import MatchCard from "./MatchCard";
+import Fixtures from "./Fixtures";
 
-const DEMO_PREDICTIONS = predictionsData as Prediction[];
 const ALL_TEAMS = teamsData as string[];
-
-// Local calendar date (YYYY-MM-DD) used to hide fixtures whose date has already
-// passed — the picker should only offer matches that haven't been played.
-const TODAY = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-})();
 
 // API base URL comes from a build-time env var. It is PUBLIC (baked into the
 // bundle) — fine for a public API URL, never for secrets. See .env.example.
@@ -29,121 +23,15 @@ const EXTRA_OPTIONS: { key: ExtraKey; label: string }[] = [
   { key: "uncertainty", label: "Uncertainty" },
 ];
 
-function MatchCard({ p }: { p: Prediction }) {
-  const maxCell = useMemo(() => {
-    let m = 0;
-    p.score_matrix.forEach((row) => row.forEach((v) => (m = Math.max(m, v))));
-    return m;
-  }, [p]);
-  const ml = p.most_likely_score, o = p.outcome;
-  const topMax = Math.max(...p.top_scores.map((s) => s.prob));
-  const venue = p.neutral ? "Neutral venue" : `${p.home} at home`;
-  const N = p.score_matrix.length;
-
-  return (
-    <div className="card-fade" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-      <div className="rounded-2xl" style={{ background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, border: `1px solid ${C.line}`, padding: "26px 24px" }}>
-        <div className="font-mono" style={{ color: C.faint, fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 18 }}>
-          {p.date ? `${p.date}  ·  ` : ""}{venue}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="font-display team-name" style={{ color: C.home }}>{p.home}</div>
-            <div className="font-mono" style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>xG {p.expected_goals.home.toFixed(2)}</div>
-          </div>
-          <div style={{ textAlign: "center", flexShrink: 0 }}>
-            <div className="font-mono score-big" style={{ color: C.ink }}>
-              {ml.home}<span style={{ color: C.faint, margin: "0 6px" }}>–</span>{ml.away}
-            </div>
-            <div className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 2 }}>
-              likely score · {pct0(ml.prob)}
-            </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
-            <div className="font-display team-name" style={{ color: C.away }}>{p.away}</div>
-            <div className="font-mono" style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>xG {p.expected_goals.away.toFixed(2)}</div>
-          </div>
-        </div>
-        <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
-          {[{ lab: p.home, v: o.home_win, col: C.home }, { lab: "Draw", v: o.draw, col: C.draw }, { lab: p.away, v: o.away_win, col: C.away }].map((s, i) => (
-            <div key={i} style={{ flex: 1, textAlign: "center" }}>
-              <div className="font-mono" style={{ color: s.col, fontSize: 26, fontWeight: 700 }}>{pct0(s.v)}</div>
-              <div style={{ color: C.dim, fontSize: 11, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.lab}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 12, display: "flex", height: 8, borderRadius: 99, overflow: "hidden", background: C.panel2 }}>
-          <div style={{ width: pct(o.home_win), background: C.home }} className="seg" />
-          <div style={{ width: pct(o.draw), background: C.draw }} className="seg" />
-          <div style={{ width: pct(o.away_win), background: C.away }} className="seg" />
-        </div>
-      </div>
-
-      <div className="grid-2">
-        <div className="rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 20 }}>
-          <div className="font-display panel-title">Scoreline heat map</div>
-          <div className="font-mono" style={{ color: C.faint, fontSize: 10, marginBottom: 14 }}>probability of every exact score</div>
-          <div style={{ display: "flex" }}>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", marginRight: 6 }}>
-              <span className="axis-label" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", color: C.home }}>{p.home} goals</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "grid", gridTemplateColumns: `18px repeat(${N}, 1fr)`, gap: 3 }}>
-                <div />
-                {Array.from({ length: N }).map((_, j) => (<div key={j} className="font-mono cell-tick" style={{ color: C.faint }}>{j}</div>))}
-                {p.score_matrix.map((row, i) => (
-                  <React.Fragment key={i}>
-                    <div className="font-mono cell-tick" style={{ color: C.faint, display: "flex", alignItems: "center", justifyContent: "center" }}>{i}</div>
-                    {row.map((v, j) => {
-                      const isML = i === ml.home && j === ml.away;
-                      const t = maxCell ? v / maxCell : 0;
-                      return (
-                        <div key={j} title={`${i}-${j}: ${pct(v)}`} className="heat-cell font-mono"
-                          style={{ background: heat(t), color: t > 0.5 ? "#fff" : "rgba(255,255,255,0.62)", boxShadow: isML ? `inset 0 0 0 2px ${C.win}` : "none" }}>
-                          {v >= 0.01 ? Math.round(v * 100) : ""}
-                        </div>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
-              </div>
-              <div className="axis-label" style={{ textAlign: "center", color: C.away, marginTop: 8 }}>{p.away} goals</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 20 }}>
-          <div className="font-display panel-title">Top 10 likely scores</div>
-          <div className="font-mono" style={{ color: C.faint, fontSize: 10, marginBottom: 14 }}>colour shows who the score favours</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {p.top_scores.map((s, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div className="font-mono" style={{ width: 34, color: C.ink, fontSize: 13 }}>{s.score}</div>
-                <div style={{ flex: 1, height: 16, background: C.panel2, borderRadius: 4, overflow: "hidden" }}>
-                  <div className="seg" style={{ width: pct(s.prob / topMax), height: "100%", background: outcomeColor(s.home, s.away), opacity: 0.85 }} />
-                </div>
-                <div className="font-mono" style={{ width: 44, textAlign: "right", color: C.dim, fontSize: 12 }}>{pct(s.prob)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
-  // Only upcoming fixtures (date on/after today), soonest first.
-  const fixtures = useMemo(
-    () => DEMO_PREDICTIONS.filter((f) => (f.date ?? "") >= TODAY).sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : 1)),
-    [],
-  );
-  const [page, setPage] = useState<"predict" | "ratings">("predict");
+  const [page, setPage] = useState<"predict" | "ratings" | "scoreboard">("predict");
+  // "fixtures" = schedule-driven bracket (self-contained); "live" = pick any pair.
   const [tab, setTab] = useState<"fixtures" | "live">("fixtures");
   const [apiUrl, setApiUrl] = useState(DEPLOYED_API);
-  const [fixIdx, setFixIdx] = useState(0);
-  const [result, setResult] = useState<Prediction | undefined>(fixtures[0]);
-  const [source, setSource] = useState<"live" | "cached">("cached");
+
+  // "Any matchup" tab state. The fixtures tab owns its own fetch/loading state.
+  const [result, setResult] = useState<Prediction | undefined>(undefined);
+  const [source, setSource] = useState<"live" | "cached">("live");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -158,27 +46,6 @@ export default function App() {
 
   const toggleExtra = (k: ExtraKey) =>
     setExtras((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
-
-  // fixtures tab: fetch the selected scheduled match live, fall back to cached
-  useEffect(() => {
-    if (tab !== "fixtures") return;
-    const f = fixtures[fixIdx];
-    if (!f) return; // no upcoming fixtures, or index out of range
-    let cancelled = false;
-    (async () => {
-      setBusy(true); setStatus(null);
-      try {
-        const live = await fetchPredict(apiUrl, f.home, f.away, f.neutral);
-        if (cancelled) return;
-        setResult({ ...live, date: f.date }); setSource("live");
-      } catch (e) {
-        if (cancelled) return;
-        setResult(f); setSource("cached");
-        setStatus({ ok: false, msg: `API unreachable (${e instanceof Error ? e.message : String(e)}) — showing the embedded snapshot.` });
-      } finally { if (!cancelled) setBusy(false); }
-    })();
-    return () => { cancelled = true; };
-  }, [tab, fixIdx, apiUrl, fixtures]);
 
   async function predictLive() {
     setBusy(true); setStatus(null);
@@ -239,8 +106,9 @@ export default function App() {
             <div style={{ display: "flex", gap: 6 }}>
               <button className="tab-btn" onClick={() => setPage("predict")} style={{ background: page === "predict" ? C.home : C.panel2, color: page === "predict" ? "#001233" : C.dim }}>Predictions</button>
               <button className="tab-btn" onClick={() => setPage("ratings")} style={{ background: page === "ratings" ? C.home : C.panel2, color: page === "ratings" ? "#001233" : C.dim }}>Team ratings</button>
+              <button className="tab-btn" onClick={() => setPage("scoreboard")} style={{ background: page === "scoreboard" ? C.home : C.panel2, color: page === "scoreboard" ? "#001233" : C.dim }}>Model scoreboard</button>
             </div>
-            {page === "predict" && (
+            {page === "predict" && tab === "live" && (result || busy) && (
               <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: badge.c, border: `1px solid ${C.line}`, borderRadius: 99, padding: "5px 11px" }}>
                 {badge.t}
               </div>
@@ -250,6 +118,8 @@ export default function App() {
 
         {page === "ratings" ? (
           <Ratings apiUrl={apiUrl} />
+        ) : page === "scoreboard" ? (
+          <Scoreboard apiUrl={apiUrl} />
         ) : (
         <>
         <div className="rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 16, marginBottom: 22 }}>
@@ -261,25 +131,12 @@ export default function App() {
               <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://your-app.up.railway.app" style={{ ...inputStyle, marginTop: 6 }} />
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <button className="tab-btn" onClick={() => setTab("fixtures")} style={{ background: tab === "fixtures" ? C.home : C.panel2, color: tab === "fixtures" ? "#001233" : C.dim }}>Upcoming fixtures</button>
+          <div style={{ display: "flex", gap: 8, marginBottom: tab === "live" ? 14 : 0 }}>
+            <button className="tab-btn" onClick={() => setTab("fixtures")} style={{ background: tab === "fixtures" ? C.home : C.panel2, color: tab === "fixtures" ? "#001233" : C.dim }}>Fixtures</button>
             <button className="tab-btn" onClick={() => setTab("live")} style={{ background: tab === "live" ? C.home : C.panel2, color: tab === "live" ? "#001233" : C.dim }}>Any matchup</button>
           </div>
 
-          {tab === "fixtures" ? (
-            <div>
-              <label className="font-mono" style={{ color: C.faint, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase" }}>Pick a match</label>
-              {fixtures.length > 0 ? (
-                <select value={fixIdx} onChange={(e) => setFixIdx(+e.target.value)} style={{ ...inputStyle, marginTop: 6 }}>
-                  {fixtures.map((f, i) => (<option key={i} value={i}>{f.date} · {f.home} v {f.away}</option>))}
-                </select>
-              ) : (
-                <div className="font-mono" style={{ color: C.dim, fontSize: 12, marginTop: 8 }}>
-                  No upcoming fixtures left — pick any two teams under “Any matchup”.
-                </div>
-              )}
-            </div>
-          ) : (
+          {tab === "live" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div className="matchup-grid">
                 <div>
@@ -319,13 +176,28 @@ export default function App() {
                   venue overrides the neutral flag · crowd support derived from {venue}
                 </div>
               )}
+              {status && <div style={{ fontSize: 12, color: status.ok ? C.win : C.warn, marginTop: 4 }}>{status.msg}</div>}
             </div>
           )}
-          {status && <div style={{ fontSize: 12, color: status.ok ? C.win : C.warn, marginTop: 12 }}>{status.msg}</div>}
         </div>
 
-        {result && <MatchCard p={result} />}
-        {result && <ExtrasView p={result} />}
+        {tab === "fixtures" ? (
+          <Fixtures apiUrl={apiUrl} />
+        ) : (
+          <>
+            {result ? (
+              <>
+                <MatchCard p={result} />
+                <ModelCompare apiUrl={apiUrl} home={result.home} away={result.away} />
+                <ExtrasView p={result} />
+              </>
+            ) : (
+              <div className="font-mono" style={{ color: C.dim, fontSize: 13, padding: 8 }}>
+                Pick two teams and hit Predict to see the forecast.
+              </div>
+            )}
+          </>
+        )}
 
         <div className="font-mono" style={{ color: C.faint, fontSize: 10, textAlign: "center", marginTop: 26, lineHeight: 1.7 }}>
           probabilities are posterior-predictive over 1,500 draws · home advantage off at neutral venues<br />
